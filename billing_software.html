@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Billing App — Web</title>
+
+<!-- jsPDF for PDF export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  :root{
+    --bg:#f7f9fc; --panel:#eaf0fb; --accent:#1976d2; --text:#1f2937;
+    --tree-even:#ffffff; --tree-odd:#f3f6fb; --low:#ffefef; --mono-font: "Lucida Console", Monaco, monospace;
+    --font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  body{font-family:var(--font-family); margin:0; background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column;}
+  header{padding:12px 16px; background:var(--panel); display:flex; align-items:center; gap:12px;}
+  header h1{margin:0; font-size:18px;}
+  .toolbar{margin-left:auto; display:flex; gap:8px; align-items:center;}
+  main{flex:1; display:flex; padding:12px; gap:12px; box-sizing:border-box;}
+  .left, .right{background:var(--panel); padding:12px; border-radius:8px;}
+  .left{width:60%; display:flex; flex-direction:column; gap:10px;}
+  .right{width:40%; min-width:320px; display:flex; flex-direction:column; gap:10px;}
+  label{font-size:13px;}
+  input[type="text"], input[type="number"], select{padding:6px; border-radius:4px; border:1px solid #ccc; width:100%;}
+  .row{display:flex; gap:8px; align-items:center;}
+  .row > *{flex:none;}
+  .grow{flex:1;}
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th, td{padding:8px; text-align:left; border-bottom:1px solid #e6e6e6;}
+  tr.low{background:var(--low);}
+  .totals{display:flex; justify-content:space-between; gap:12px; align-items:center;}
+  .btn{padding:6px 10px; border-radius:6px; background:var(--accent); color:white; border:none; cursor:pointer;}
+  .btn.secondary{background:#6b7280;}
+  .tabs{display:flex; gap:6px; margin-bottom:8px;}
+  .tab{padding:8px 10px; border-radius:6px; background:transparent; cursor:pointer;}
+  .tab.active{background:var(--accent); color:white;}
+  .small{font-size:12px; padding:4px 6px;}
+  .product-list{height:250px; overflow:auto; border:1px solid #ddd; background:white; padding:6px; border-radius:6px;}
+  .product-item{padding:6px; cursor:pointer;}
+  .search{display:flex; gap:6px; align-items:center;}
+  .preview{white-space:pre; font-family:var(--mono-font); background:whitesmoke; padding:8px; height:360px; overflow:auto; border-radius:6px;}
+  footer{padding:8px 12px; font-size:13px; background:transparent; display:flex; justify-content:space-between;}
+  /* Themes: Dark and Warm */
+  body.theme-dark{ --bg:#0f1724; --panel:#0b1220; --accent:#1e88e5; --text:#e6eef8; --tree-even:#0b1220; --tree-odd:#0f1626; --low:#3b0f0f; }
+  body.theme-warm{ --bg:#fcfbf8; --panel:#f6efe6; --accent:#ef6c00; --text:#3b2f2f; --tree-even:#fffaf5; --tree-odd:#fff3e0; --low:#ffddd2; }
+  input[type="file"]{display:none;}
+  .flex-col{display:flex; flex-direction:column; gap:6px;}
+  .hidden{display:none;}
+  .controls{display:flex; gap:6px; flex-wrap:wrap;}
+  .kbd{background:#eee; padding:2px 6px; border-radius:4px; font-size:12px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="shopName">P.MUTHUGANESAN NADAR TEXTILE AND READYMADE</h1>
+  <div style="font-size:13px; color:gray;">103b kamachi amman sanathi street east raja veethi kanchipuram • 04447791355</div>
+  <div class="toolbar">
+    <button class="btn small" id="cycleTheme">Cycle Theme</button>
+    <button class="btn small secondary" id="backupBtn">Export JSON</button>
+    <button class="btn small" id="importBtn">Import JSON</button>
+    <button class="btn small" id="helpBtn">Shortcuts</button>
+  </div>
+</header>
+
+<main>
+  <div class="left">
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-tab="billing">🧾 Billing</div>
+      <div class="tab" data-tab="print">🖨️ Print</div>
+      <div class="tab" data-tab="products">📦 Products</div>
+    </div>
+
+    <!-- Billing -->
+    <section id="billing" class="pane">
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1;">
+          <label>Customer Name</label>
+          <input type="text" id="custName" value="Customer" />
+        </div>
+        <div style="width:220px;">
+          <label>Phone</label>
+          <input type="text" id="custPhone" />
+        </div>
+      </div>
+
+      <div style="margin-top:10px; border-radius:6px; padding:10px; background:white;">
+        <div class="row">
+          <div style="flex:1;">
+            <label>Item</label>
+            <input type="text" id="itemName" placeholder="Start typing to see suggestions" />
+            <div id="suggestions" class="product-list hidden"></div>
+          </div>
+          <div style="width:110px;">
+            <label>MRP</label><input type="number" id="itemMrp" step="0.01" />
+          </div>
+          <div style="width:110px;">
+            <label>Rate</label><input type="number" id="itemRate" step="0.01" />
+          </div>
+          <div style="width:90px;">
+            <label>Disc %</label><input type="number" id="itemDisc" step="0.01" />
+          </div>
+          <div style="width:80px;">
+            <label>Qty</label><input type="number" id="itemQty" value="1" />
+          </div>
+          <div style="width:120px; display:flex; align-items:end;">
+            <button class="btn" id="addItemBtn">Add Item</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px; background:white; border-radius:6px; padding:8px;">
+        <table id="itemsTable">
+          <thead><tr><th>Item</th><th>MRP</th><th>Rate</th><th>Disc%</th><th>Qty</th><th>Total</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div style="display:flex; gap:12px; margin-top:8px; align-items:center;">
+        <div style="flex:1">
+          <label>Low stock threshold</label>
+          <input type="number" id="lowThreshold" value="100" />
+          <button class="btn small secondary" id="removeLow">Remove Low Stock Items</button>
+        </div>
+        <div style="width:260px;">
+          <label>GST %</label>
+          <input type="number" id="gst" value="18" step="0.1" />
+        </div>
+      </div>
+
+      <div style="margin-top:10px;" class="totals">
+        <div>
+          <div>Items: <span id="itemCount">0</span></div>
+          <div class="controls" style="margin-top:6px;">
+            <button class="btn secondary small" id="undoBtn">Undo</button>
+            <button class="btn secondary small" id="redoBtn">Redo</button>
+            <button class="btn secondary small" id="clearBtn">Clear All</button>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div>SubTotal: ₹ <span id="subtotal">0.00</span></div>
+          <div>GST: ₹ <span id="gstAmount">0.00</span></div>
+          <div style="font-weight:700; font-size:18px;">Total: ₹ <span id="total">0.00</span></div>
+          <div style="margin-top:6px;">Paid: <input type="number" id="paid" value="0" style="width:100px;"/> Due: ₹ <span id="due">0.00</span></div>
+          <div style="margin-top:8px;">
+            <button class="btn" id="openPrintTab">Preview & Print</button>
+            <button class="btn" id="savePdfBtn">Save PDF</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Print -->
+    <section id="print" class="pane hidden">
+      <div class="row" style="justify-content:space-between;">
+        <div><label>Printer: (use browser Print)</label></div>
+        <div>
+          <button class="btn" id="printBtn">Browser Print</button>
+          <button class="btn" id="savePdfBtn2">Save PDF</button>
+          <button class="btn secondary" id="backToBilling">Back</button>
+        </div>
+      </div>
+      <div style="margin-top:8px;" class="preview" id="printPreview"></div>
+    </section>
+
+    <!-- Products -->
+    <section id="products" class="pane hidden">
+      <div style="display:flex; gap:10px;">
+        <div style="width:40%;">
+          <label>Search</label>
+          <input type="text" id="prodSearch" placeholder="Search product name, category or brand" />
+          <div style="margin-top:8px;">
+            <button class="btn small" id="importCsvBtn">Import CSV</button>
+            <button class="btn small" id="exportCsvBtn">Export CSV</button>
+            <button class="btn small secondary" id="addProdBtn">Add Product</button>
+          </div>
+          <div style="margin-top:8px; height:320px; overflow:auto; border:1px solid #ddd; border-radius:6px; background:white;" id="prodTree"></div>
+        </div>
+        <div style="flex:1;">
+          <label>Product Details</label>
+          <div class="flex-col">
+            <div class="row"><input placeholder="SKU" id="p_sku"/><input placeholder="Name" id="p_name" class="grow"/></div>
+            <div class="row"><input placeholder="Category" id="p_category"/><input placeholder="Brand" id="p_brand" class="grow"/></div>
+            <div class="row"><input placeholder="MRP" id="p_mrp" type="number" step="0.01"/><input placeholder="Rate" id="p_rate" type="number" step="0.01"/></div>
+            <div class="row"><input placeholder="Discount%" id="p_discount" type="number" step="0.01"/><input placeholder="Qty" id="p_qty" type="number"/></div>
+            <div class="row"><label class="small">Attach Image</label><input type="file" id="p_imagefile"/></div>
+            <div id="p_image_preview"></div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn" id="saveProdBtn">Save Product</button>
+              <button class="btn secondary" id="deleteProdBtn">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="right">
+    <div style="background:white; padding:10px; border-radius:6px;">
+      <h3 style="margin:0 0 8px 0;">Quick Controls</h3>
+      <div style="display:flex; gap:6px; flex-direction:column;">
+        <button class="btn" id="reloadProducts">Reload Products</button>
+        <button class="btn secondary" id="saveProductsJson">Export Products JSON</button>
+        <button class="btn" id="loadProductsJson">Import Products JSON</button>
+      </div>
+    </div>
+
+    <div style="background:white; padding:10px; border-radius:6px;">
+      <h4 style="margin:0 0 8px 0;">Help & Shortcuts</h4>
+      <div style="font-size:13px; color:#444;">
+        <div><span class="kbd">Enter</span> add item (when in item fields)</div>
+        <div><span class="kbd">Ctrl+S</span> save PDF</div>
+        <div><span class="kbd">Ctrl+N</span> clear invoice</div>
+        <div><span class="kbd">Alt+T</span> cycle theme</div>
+        <div style="margin-top:6px;">Data is stored in browser <b>localStorage</b>. Export JSON/CSV to backup.</div>
+      </div>
+    </div>
+
+    <div style="background:white; padding:10px; border-radius:6px;">
+      <h4 style="margin:0 0 8px 0;">Backup / Restore</h4>
+      <div style="display:flex; gap:6px;">
+        <button class="btn" id="downloadJsonBtn">Download App JSON</button>
+        <button class="btn secondary" id="uploadJsonBtn">Upload JSON</button>
+      </div>
+      <input type="file" id="uploadJsonInput" accept="application/json" style="display:none" />
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div>Billing App — Browser Edition</div>
+  <div>© <span id="year"></span></div>
+</footer>
+
+<script>
+(function(){
+  // Simple single-file app state
+  const APPKEY = "billing_app_web_v1";
+  const PRODUCTS_KEY = "billing_products_v1";
+
+  const defaultShop = {
+    name: "P.MUTHUGANESAN NADAR TEXTILE AND READYMADE",
+    address: "103b kamachi amman sanathi street east raja veethi kanchipuram",
+    phone: "04447791355 / 9944369227"
+  };
+
+  // DOM references
+  const tabs = document.querySelectorAll('.tab');
+  const panes = document.querySelectorAll('.pane');
+  const gstEl = document.getElementById('gst');
+  const subtotalEl = document.getElementById('subtotal');
+  const gstAmtEl = document.getElementById('gstAmount');
+  const totalEl = document.getElementById('total');
+  const itemsTableBody = document.querySelector('#itemsTable tbody');
+  const itemCountEl = document.getElementById('itemCount');
+  const paidEl = document.getElementById('paid');
+  const dueEl = document.getElementById('due');
+  const addItemBtn = document.getElementById('addItemBtn');
+  const itemName = document.getElementById('itemName');
+  const itemMrp = document.getElementById('itemMrp');
+  const itemRate = document.getElementById('itemRate');
+  const itemDisc = document.getElementById('itemDisc');
+  const itemQty = document.getElementById('itemQty');
+  const suggestions = document.getElementById('suggestions');
+  const prodTree = document.getElementById('prodTree');
+  const prodSearch = document.getElementById('prodSearch');
+  const lowThreshold = document.getElementById('lowThreshold');
+  const removeLowBtn = document.getElementById('removeLow');
+  const savePdfBtn = document.getElementById('savePdfBtn');
+  const savePdfBtn2 = document.getElementById('savePdfBtn2');
+  const printBtn = document.getElementById('printBtn');
+  const printPreview = document.getElementById('printPreview');
+  const openPrintTabBtn = document.getElementById('openPrintTab');
+  const clearBtn = document.getElementById('clearBtn');
+  const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
+  const cycleThemeBtn = document.getElementById('cycleTheme');
+  const helpBtn = document.getElementById('helpBtn');
+  const backupBtn = document.getElementById('backupBtn');
+  const importBtn = document.getElementById('importBtn');
+
+  // product fields
+  const p_sku = document.getElementById('p_sku');
+  const p_name = document.getElementById('p_name');
+  const p_category = document.getElementById('p_category');
+  const p_brand = document.getElementById('p_brand');
+  const p_mrp = document.getElementById('p_mrp');
+  const p_rate = document.getElementById('p_rate');
+  const p_discount = document.getElementById('p_discount');
+  const p_qty = document.getElementById('p_qty');
+  const p_imagefile = document.getElementById('p_imagefile');
+  const p_image_preview = document.getElementById('p_image_preview');
+  const saveProdBtn = document.getElementById('saveProdBtn');
+  const deleteProdBtn = document.getElementById('deleteProdBtn');
+  const addProdBtn = document.getElementById('addProdBtn');
+  const importCsvBtn = document.getElementById('importCsvBtn');
+  const exportCsvBtn = document.getElementById('exportCsvBtn');
+
+  // right controls
+  const downloadJsonBtn = document.getElementById('downloadJsonBtn');
+  const uploadJsonBtn = document.getElementById('uploadJsonBtn');
+  const uploadJsonInput = document.getElementById('uploadJsonInput');
+
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  // app state
+  let products = loadProducts(); // object keyed by lower-name
+  let items = []; // items in current bill
+  let undoStack = []; let undoIndex = -1;
+
+  // theme cycle
+  const themeOrder = ['','theme-dark','theme-warm'];
+  let themeIndex = 0;
+  function applyThemeByIndex(i){
+    document.body.classList.remove(...themeOrder);
+    document.body.classList.add(themeOrder[i] || '');
+    themeIndex = i;
+  }
+  cycleThemeBtn.addEventListener('click', ()=> applyThemeByIndex((themeIndex+1)%themeOrder.length));
+  document.addEventListener('keydown', (e)=> {
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase() === 's'){ e.preventDefault(); savePDF(); }
+    if(e.altKey && e.key.toLowerCase() === 't'){ applyThemeByIndex((themeIndex+1)%themeOrder.length); }
+    if((e.ctrlKey||e.metaKey) && e.key.toLowerCase() === 'n'){ clearAll(); }
+  });
+
+  // tabs
+  tabs.forEach(t=>{
+    t.addEventListener('click', ()=> {
+      tabs.forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      const tab = t.getAttribute('data-tab');
+      panes.forEach(p=>p.classList.add('hidden'));
+      document.getElementById(tab).classList.remove('hidden');
+      if(tab==='print') refreshPrintPreview();
+    });
+  });
+
+  // Load/save app from localStorage
+  function saveApp(){
+    const data = { products, items, settings:{ gst: parseFloat(gstEl.value||0), lowThreshold: parseInt(lowThreshold.value||100) } };
+    localStorage.setItem(APPKEY, JSON.stringify(data));
+  }
+  function loadApp(){
+    const raw = localStorage.getItem(APPKEY);
+    if(!raw) return null;
+    try { return JSON.parse(raw); } catch(e){ return null; }
+  }
+
+  function loadProducts(){
+    const raw = localStorage.getItem(PRODUCTS_KEY);
+    if(!raw) return {};
+    try{ return JSON.parse(raw); }catch(e){ return {}; }
+  }
+  function saveProducts(){
+    localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+  }
+
+  // Undo/Redo
+  function pushSnapshot(){
+    undoStack = undoStack.slice(0, undoIndex+1);
+    undoStack.push(JSON.stringify({items, products}));
+    if(undoStack.length>200) undoStack.shift();
+    undoIndex = undoStack.length - 1;
+    updateUndoButtons();
+  }
+  function updateUndoButtons(){
+    undoBtn.disabled = undoIndex <= 0;
+    redoBtn.disabled = undoIndex >= undoStack.length - 1;
+  }
+  function doUndo(){
+    if(undoIndex <= 0) return;
+    undoIndex -= 1;
+    const state = JSON.parse(undoStack[undoIndex]);
+    items = state.items || [];
+    products = state.products || {};
+    renderItems();
+    renderProductsTree();
+    saveProducts(); saveApp();
+    updateUndoButtons();
+  }
+  function doRedo(){
+    if(undoIndex >= undoStack.length - 1) return;
+    undoIndex += 1;
+    const state = JSON.parse(undoStack[undoIndex]);
+    items = state.items || [];
+    products = state.products || {};
+    renderItems();
+    renderProductsTree();
+    saveProducts(); saveApp();
+    updateUndoButtons();
+  }
+  undoBtn.addEventListener('click', doUndo);
+  redoBtn.addEventListener('click', doRedo);
+
+  // Add item
+  addItemBtn.addEventListener('click', addItem);
+  itemQty.addEventListener('keydown', (e)=>{ if(e.key==='Enter') addItem(); });
+  itemName.addEventListener('input', showSuggestions);
+
+  function addItem(){
+    const name = itemName.value.trim();
+    const mrp = parseFloat(itemMrp.value || 0) || 0;
+    const rate = parseFloat(itemRate.value || 0) || 0;
+    const discount = parseFloat(itemDisc.value || 0) || 0;
+    const qty = parseInt(itemQty.value || 0) || 0;
+    if(!name){ alert("Item name required"); return; }
+    const total = +(rate * qty * (1 - discount/100)).toFixed(2);
+    items.push({name, mrp, rate, discount, qty, total});
+    pushSnapshot();
+    renderItems();
+    saveApp();
+    // clear fields
+    itemName.value=''; itemMrp.value=''; itemRate.value=''; itemDisc.value=''; itemQty.value='1';
+    suggestions.classList.add('hidden');
+  }
+
+  // suggestions
+  function showSuggestions(){
+    const q = itemName.value.trim().toLowerCase();
+    if(!q){ suggestions.classList.add('hidden'); return; }
+    const matches = Object.values(products).filter(p=> (p.name||'').toLowerCase().includes(q) || (p.brand||'').toLowerCase().includes(q)).slice(0,20);
+    if(!matches.length){ suggestions.classList.add('hidden'); return; }
+    suggestions.innerHTML = '';
+    matches.forEach(m=>{
+      const d = document.createElement('div'); d.className='product-item'; d.textContent = m.name + (m.rate?` — ₹${m.rate}`:'');
+      d.addEventListener('click', ()=>{
+        itemName.value = m.name || '';
+        itemMrp.value = m.mrp || '';
+        itemRate.value = m.rate || '';
+        itemDisc.value = m.discount || '';
+        itemQty.value = 1;
+        suggestions.classList.add('hidden');
+      });
+      suggestions.appendChild(d);
+    });
+    suggestions.classList.remove('hidden');
+  }
+
+  // render items
+  function renderItems(){
+    itemsTableBody.innerHTML = '';
+    items.forEach((it, idx)=>{
+      const tr = document.createElement('tr');
+      if(it.qty <= parseInt(lowThreshold.value||100)) tr.classList.add('low');
+      tr.innerHTML = `<td>${escapeHtml(it.name)}</td>
+        <td>₹ ${number(it.mrp)}</td><td>₹ ${number(it.rate)}</td><td>${number(it.discount)}%</td>
+        <td>${it.qty}</td><td>₹ ${number(it.total)}</td>
+        <td><button class="small" data-i="${idx}">Del</button></td>`;
+      tr.querySelector('button').addEventListener('click', (e)=>{ items.splice(idx,1); pushSnapshot(); renderItems(); saveApp(); });
+      itemsTableBody.appendChild(tr);
+    });
+    updateTotals();
+  }
+
+  // totals
+  function updateTotals(){
+    const sub = items.reduce((s,i)=>s + (i.total||0), 0);
+    const gstPct = parseFloat(gstEl.value||0);
+    const gstAmt = +(sub * gstPct/100).toFixed(2);
+    const total = +(sub + gstAmt).toFixed(2);
+    subtotalEl.textContent = number(sub);
+    gstAmtEl.textContent = number(gstAmt);
+    totalEl.textContent = number(total);
+    itemCountEl.textContent = items.length;
+    const paid = parseFloat(paidEl.value||0) || 0;
+    dueEl.textContent = number( Math.max(0, total - paid) );
+  }
+
+  paidEl.addEventListener('input', updateTotals);
+  gstEl.addEventListener('input', ()=>{ updateTotals(); saveApp(); });
+
+  // remove low stock
+  removeLowBtn.addEventListener('click', ()=>{
+    const thr = parseInt(lowThreshold.value||0);
+    items = items.filter(i=> i.qty > thr);
+    pushSnapshot(); renderItems(); saveApp();
+  });
+
+  // clear all
+  function clearAll(){
+    if(!confirm("Clear the current invoice?")) return;
+    items = [];
+    pushSnapshot(); renderItems(); saveApp();
+    document.getElementById('custName').value = "Customer";
+    document.getElementById('custPhone').value = "";
+  }
+  clearBtn.addEventListener('click', clearAll);
+
+  // print preview
+  function formatLine(item){
+    const n = item.name.substring(0,24).padEnd(24,' ');
+    const mrp = number(item.mrp).padStart(8,' ');
+    const rate = number(item.rate).padStart(8,' ');
+    const disc = (''+number(item.discount)).padStart(6,' ');
+    const qty = (''+item.qty).padStart(4,' ');
+    const tot = number(item.total).padStart(10,' ');
+    return `${n}${mrp}${rate}${disc}${qty}${tot}`;
+  }
+  function refreshPrintPreview(){
+    const billNo = 'BILL-' + Math.floor(Math.random()*900000+100000);
+    const lines = [];
+    lines.push(defaultShop.name);
+    lines.push(defaultShop.address);
+    lines.push(defaultShop.phone);
+    lines.push('-'.repeat(60));
+    lines.push(`Bill No: ${billNo}   Date: ${new Date().toLocaleString()}`);
+    lines.push('-'.repeat(60));
+    lines.push('Item                     MRP    Rate  Disc%  Qty     Total');
+    lines.push('-'.repeat(60));
+    items.forEach(i=>lines.push(formatLine(i)));
+    lines.push('-'.repeat(60));
+    lines.push(`SubTotal: ₹ ${subtotalEl.textContent}`);
+    lines.push(`GST: ₹ ${gstAmtEl.textContent}`);
+    lines.push(`Total: ₹ ${totalEl.textContent}`);
+    lines.push(`Paid: ₹ ${paidEl.value || 0}  Due: ₹ ${dueEl.textContent}`);
+    lines.push('-'.repeat(60));
+    printPreview.textContent = lines.join("\n");
+  }
+  printBtn.addEventListener('click', ()=>{
+    window.print();
+  });
+  savePdfBtn.addEventListener('click', savePDF);
+  savePdfBtn2.addEventListener('click', savePDF);
+  openPrintTabBtn.addEventListener('click', ()=> {
+    document.querySelector('.tab[data-tab="print"]').click();
+  });
+
+  function savePDF(){
+    refreshPrintPreview();
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'pt', format:'a4'});
+    const lines = printPreview.textContent.split('\n');
+    const left = 40, top = 40, lineh = 12;
+    let y = top;
+    doc.setFont('Courier', 'normal');
+    lines.forEach((l, idx)=>{
+      doc.text(String(l), left, y);
+      y += lineh;
+      if(y > doc.internal.pageSize.getHeight() - 60){
+        doc.addPage(); y = top;
+      }
+    });
+    const filename = `bill_${Date.now()}.pdf`;
+    doc.save(filename);
+    alert('PDF saved: ' + filename);
+  }
+
+  // products management
+  function renderProductsTree(filter){
+    prodTree.innerHTML = '';
+    const arr = Object.values(products).sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+    const q = (filter || '').trim().toLowerCase();
+    arr.filter(p=>{
+      if(!q) return true;
+      return (p.name||'').toLowerCase().includes(q) || (p.brand||'').toLowerCase().includes(q) || (p.category||'').toLowerCase().includes(q);
+    }).forEach(p=>{
+      const div = document.createElement('div');
+      div.className = 'product-item'; div.style.padding='8px'; div.style.borderBottom='1px solid #eee';
+      div.innerHTML = `<strong>${escapeHtml(p.name||'')}</strong><div style="font-size:12px;color:#666">Rate: ₹${number(p.rate)} • Qty: ${p.qty||0}</div>`;
+      div.addEventListener('click', ()=> loadProductToForm(p.name));
+      prodTree.appendChild(div);
+    });
+  }
+
+  function loadProductToForm(name){
+    const p = products[name.toLowerCase()] || {};
+    p_sku.value = p.sku || '';
+    p_name.value = p.name || '';
+    p_category.value = p.category || '';
+    p_brand.value = p.brand || '';
+    p_mrp.value = p.mrp || '';
+    p_rate.value = p.rate || '';
+    p_discount.value = p.discount || '';
+    p_qty.value = p.qty || '';
+    p_image_preview.innerHTML = '';
+    if(p.imageData){
+      const img = new Image(); img.src = p.imageData; img.style.maxWidth='160px'; img.style.maxHeight='120px';
+      p_image_preview.appendChild(img);
+    }
+  }
+
+  saveProdBtn.addEventListener('click', ()=>{
+    const name = (p_name.value||'').trim();
+    if(!name){ alert('Product name required'); return; }
+    const p = {
+      sku: p_sku.value || '',
+      name,
+      category: p_category.value || '',
+      brand: p_brand.value || '',
+      mrp: parseFloat(p_mrp.value||0) || 0,
+      rate: parseFloat(p_rate.value||0) || 0,
+      discount: parseFloat(p_discount.value||0) || 0,
+      qty: parseInt(p_qty.value||0) || 0
+    };
+    if(p_imagefile.files && p_imagefile.files[0]){
+      const fr = new FileReader();
+      fr.onload = ()=>{ p.imageData = fr.result; products[name.toLowerCase()] = p; saveProducts(); renderProductsTree(prodSearch.value); pushSnapshot(); alert('Saved'); };
+      fr.readAsDataURL(p_imagefile.files[0]);
+    } else {
+      // preserve existing image if present
+      const existing = products[name.toLowerCase()] || {};
+      if(existing.imageData) p.imageData = existing.imageData;
+      products[name.toLowerCase()] = p;
+      saveProducts(); renderProductsTree(prodSearch.value); pushSnapshot(); alert('Saved');
+    }
+  });
+  deleteProdBtn.addEventListener('click', ()=>{
+    const name = (p_name.value||'').trim();
+    if(!name) return alert('Select product to delete');
+    if(!confirm('Delete product '+name+' ?')) return;
+    delete products[name.toLowerCase()];
+    saveProducts(); renderProductsTree(prodSearch.value); alert('Deleted');
+  });
+  addProdBtn.addEventListener('click', ()=> {
+    p_sku.value=''; p_name.value=''; p_category.value=''; p_brand.value=''; p_mrp.value=''; p_rate.value=''; p_discount.value=''; p_qty.value='';
+    p_image_preview.innerHTML=''; p_imagefile.value='';
+  });
+
+  prodSearch.addEventListener('input', ()=> renderProductsTree(prodSearch.value));
+
+  // CSV import/export (products)
+  importCsvBtn.addEventListener('click', ()=> {
+    const f = document.createElement('input'); f.type='file'; f.accept='text/csv';
+    f.onchange = e=>{
+      const file = e.target.files[0]; if(!file) return;
+      const fr = new FileReader(); fr.onload = ()=> {
+        const txt = fr.result;
+        const rows = csvToArray(txt);
+        rows.forEach(r=>{
+          const name = r.name || r.Name || r.product || r.Product; if(!name) return;
+          products[name.toLowerCase()] = {
+            sku: r.sku||'',
+            name,
+            category: r.category||'',
+            brand: r.brand||'',
+            mrp: parseFloat(r.mrp||0)||0,
+            rate: parseFloat(r.rate||0)||0,
+            discount: parseFloat(r.discount||0)||0,
+            qty: parseInt(r.qty||0)||0
+          };
+        });
+        saveProducts(); renderProductsTree(); pushSnapshot(); alert('Imported CSV');
+      }; fr.readAsText(file,'utf8');
+    }; f.click();
+  });
+
+  exportCsvBtn.addEventListener('click', ()=>{
+    const rows = Object.values(products).map(p=> ({name:p.name, sku:p.sku, category:p.category, brand:p.brand, mrp:p.mrp, rate:p.rate, discount:p.discount, qty:p.qty}) );
+    const csv = arrayToCsv(rows);
+    downloadText(csv, 'products_export.csv', 'text/csv');
+  });
+
+  // Backup / restore app JSON
+  downloadJsonBtn.addEventListener('click', ()=>{
+    const data = { products, items, settings:{gst:gstEl.value, lowThreshold:lowThreshold.value} };
+    downloadText(JSON.stringify(data, null,2), 'billing_app_export.json', 'application/json');
+  });
+  uploadJsonBtn.addEventListener('click', ()=> uploadJsonInput.click());
+  uploadJsonInput.addEventListener('change', (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const fr = new FileReader(); fr.onload = ()=> {
+      try{
+        const data = JSON.parse(fr.result);
+        if(data.products) products = data.products;
+        if(data.items) items = data.items;
+        saveProducts(); saveApp(); renderProductsTree(); renderItems(); pushSnapshot(); alert('Imported JSON');
+      }catch(err){ alert('Invalid JSON'); }
+    }; fr.readAsText(f,'utf8');
+  });
+
+  // Import/Export app JSON buttons in header
+  backupBtn.addEventListener('click', ()=> downloadJsonBtn.click());
+  importBtn.addEventListener('click', ()=> uploadJsonBtn.click());
+
+  // Export products JSON quick
+  document.getElementById('saveProductsJson').addEventListener('click', ()=> {
+    downloadText(JSON.stringify(products,null,2),'products.json','application/json');
+  });
+  document.getElementById('loadProductsJson').addEventListener('click', ()=> {
+    const f = document.createElement('input'); f.type='file'; f.accept='application/json';
+    f.onchange = e=>{
+      const file = e.target.files[0]; if(!file) return;
+      const fr = new FileReader(); fr.onload = ()=> {
+        try{ products = JSON.parse(fr.result); saveProducts(); renderProductsTree(); pushSnapshot(); alert('Loaded products'); }catch(e){ alert('Bad file'); }
+      }; fr.readAsText(file,'utf8');
+    }; f.click();
+  });
+
+  // Help
+  helpBtn.addEventListener('click', ()=> alert("Shortcuts:\nCtrl+S Save PDF\nCtrl+N New Invoice\nAlt+T Cycle Theme\nFamiliar functions are on-screen."));
+
+  // Utility helpers
+  function number(v){ return (parseFloat(v)||0).toFixed(2); }
+  function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function downloadText(text, filename, mime){
+    const blob = new Blob([text], {type: mime||'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  }
+  function csvToArray(csv){
+    // simple CSV parser to array of objects (first row = headers)
+    const lines = csv.replace(/\r/g,'').split('\n').filter(Boolean);
+    if(!lines.length) return [];
+    const headers = lines[0].split(',').map(h=>h.trim());
+    return lines.slice(1).map(l=>{
+      const cols = l.split(',');
+      const obj = {};
+      headers.forEach((h,i)=> obj[h]=cols[i]!==undefined?cols[i].trim():'');
+      return obj;
+    });
+  }
+  function arrayToCsv(arr){
+    if(!arr.length) return '';
+    const keys = Object.keys(arr[0]);
+    const lines = [keys.join(',')];
+    arr.forEach(r=> lines.push(keys.map(k=> (''+ (r[k]===undefined?'':r[k])).replace(/"/g,'""')).map(v=>`"${v}"`).join(',')));
+    return lines.join('\n');
+  }
+
+  // init
+  (function init(){
+    // load stored app
+    const app = loadApp();
+    if(app && app.items){ items = app.items || []; if(app.settings && app.settings.gst) gstEl.value = app.settings.gst; if(app.settings && app.settings.lowThreshold) lowThreshold.value = app.settings.lowThreshold; }
+    renderProductsTree();
+    renderItems();
+    pushSnapshot(); // initial snapshot
+    updateUndoButtons();
+  })();
+
+  // small utilities
+  function renderProductsTreeDelayed(){ setTimeout(()=>renderProductsTree(prodSearch.value),0); }
+  document.getElementById('reloadProducts').addEventListener('click', ()=> { products = loadProducts(); renderProductsTree(); alert('Products reloaded'); });
+  document.getElementById('prodSearch').addEventListener('keyup', renderProductsTreeDelayed);
+
+  // misc buttons
+  document.getElementById('openPrintTab').addEventListener('click', ()=> { document.querySelector('.tab[data-tab="print"]').click(); });
+  document.getElementById('backToBilling').addEventListener('click', ()=> { document.querySelector('.tab[data-tab="billing"]').click(); });
+
+  // helper: escape on inputs to prevent accidental script insertion when showing text
+  function safeValue(v){ return v===null||v===undefined? '': String(v); }
+
+  // expose some functions for console debugging
+  window._billingApp = {
+    products, items, saveProducts, saveApp, renderItems, renderProductsTree
+  };
+
+})();
+</script>
+
+</body>
+</html>
